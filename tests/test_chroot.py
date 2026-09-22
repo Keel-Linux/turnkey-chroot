@@ -160,3 +160,59 @@ def test_mount_context_manager_unmounts(
         assert patched_mounts[0].umount_called is False
     # leaving the context must trigger teardown via the finally block
     assert patched_mounts[0].umount_called is True
+
+
+# --- MagicMounts.umount -----------------------------------------------------
+
+
+def _mounted_magicmounts(root: str = "/fake/root") -> chroot.MagicMounts:
+    """Build a MagicMounts for MNT_DEFAULT without mounting anything.
+
+    `__init__` calls `mount()`, which is patched out; the bookkeeping is then
+    set as if both proc and devpts had been mounted.
+    """
+    with patch.object(chroot.MagicMounts, "mount"):
+        mnt = chroot.MagicMounts(dict(chroot.MNT_DEFAULT), root=root)
+    for name in mnt.mounted:
+        mnt.mounted[name] = True
+    return mnt
+
+
+def test_umount_uses_plain_umount_not_force() -> None:
+    """`umount --force` is refused for proc inside LXC containers."""
+    mnt = _mounted_magicmounts()
+    with patch("chroot.subprocess.run") as run:
+        mnt.umount()
+    argvs = [c.args[0] for c in run.call_args_list]
+    assert argvs == [
+        ["/usr/bin/umount", "/fake/root/proc"],
+        ["/usr/bin/umount", "/fake/root/dev/pts"],
+    ]
+    assert not any(mnt.mounted.values())
+
+
+def test_umount_falls_back_to_lazy_when_plain_fails() -> None:
+    mnt = _mounted_magicmounts()
+
+    def fake_run(argv: list[str], **_kwargs: object) -> None:
+        if "--lazy" not in argv and argv[-1].endswith("/proc"):
+            raise subprocess.CalledProcessError(32, argv)
+
+    with patch("chroot.subprocess.run", side_effect=fake_run) as run:
+        mnt.umount()
+    argvs = [c.args[0] for c in run.call_args_list]
+    assert ["/usr/bin/umount", "--lazy", "/fake/root/proc"] in argvs
+    assert not any(mnt.mounted.values())
+
+
+def test_umount_raises_mounterror_when_lazy_also_fails() -> None:
+    mnt = _mounted_magicmounts()
+    err = subprocess.CalledProcessError(32, ["umount"])
+    with (
+        patch("chroot.subprocess.run", side_effect=err),
+        pytest.raises(chroot.MountError),
+    ):
+        mnt.umount()
+    assert mnt.mounted["proc"] is True
+    for name in mnt.mounted:
+        mnt.mounted[name] = False
