@@ -84,6 +84,14 @@ line-ending = "auto"
 docstring-code-format = false
 docstring-code-line-length = "dynamic"
 
+[tool.coverage.run]
+branch = true
+source = ["chroot"]
+
+[tool.coverage.report]
+fail_under = 95
+show_missing = true
+
 [tool.mypy]
 # use local type stubs (generated with stubgen)
 mypy_path = "type_stubs"
