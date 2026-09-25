@@ -1,3 +1,4 @@
+# Copyright (c) 2021-2026 TurnkeyLinux <admin@turnkeylinux.org>
 """Tests for the `chroot` module.
 
 These tests deliberately avoid any real mounting or chrooting (both of which
@@ -9,6 +10,8 @@ manager contract - in isolation.
 
 from __future__ import annotations
 
+import importlib
+import logging
 import subprocess
 from typing import ClassVar
 from unittest.mock import mock_open, patch
@@ -216,3 +219,168 @@ def test_umount_raises_mounterror_when_lazy_also_fails() -> None:
     assert mnt.mounted["proc"] is True
     for name in mnt.mounted:
         mnt.mounted[name] = False
+
+
+# --- Chroot.system / run / environ -------------------------------------------
+
+
+def _capture_run(
+    captured_cmd: list[str],
+    captured_kwargs: dict[str, object],
+    returncode: int = 0,
+) -> object:
+    def fake_run(
+        cmd: list[str],
+        *args: object,
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        captured_cmd.extend(cmd)
+        captured_kwargs.update(kwargs)
+        return subprocess.CompletedProcess(cmd, returncode)
+
+    return fake_run
+
+
+def test_system_runs_the_command_through_bash(
+    patched_mounts: list[DummyMagicMounts],
+) -> None:
+    captured_cmd: list[str] = []
+    captured_kwargs: dict[str, object] = {}
+
+    cr = chroot.Chroot("/mnt/cr")
+    with patch.object(
+        chroot.subprocess,
+        "run",
+        _capture_run(captured_cmd, captured_kwargs, returncode=3),
+    ):
+        rc = cr.system("apt-get update")
+
+    assert captured_cmd == [
+        "chroot",
+        "/mnt/cr",
+        "/bin/bash",
+        "-c",
+        "apt-get update",
+    ]
+    assert captured_kwargs["env"] is cr.environ
+    assert captured_kwargs["check"] is False
+    assert rc == 3  # noqa: PLR2004
+
+
+def test_system_without_a_command_opens_a_shell(
+    patched_mounts: list[DummyMagicMounts],
+) -> None:
+    captured_cmd: list[str] = []
+
+    cr = chroot.Chroot("/mnt/cr")
+    with patch.object(
+        chroot.subprocess,
+        "run",
+        _capture_run(captured_cmd, {}),
+    ):
+        assert cr.system() == 0
+
+    assert captured_cmd == ["chroot", "/mnt/cr", "/bin/bash"]
+
+
+def test_run_splits_a_string_command(
+    patched_mounts: list[DummyMagicMounts],
+) -> None:
+    captured_cmd: list[str] = []
+
+    cr = chroot.Chroot("/mnt/cr")
+    with patch.object(
+        chroot.subprocess,
+        "run",
+        _capture_run(captured_cmd, {}),
+    ):
+        cr.run("ls -la /tmp")
+
+    assert captured_cmd == ["chroot", "/mnt/cr", "sh", "-c", "ls -la /tmp"]
+
+
+def test_prepare_command_rejects_arguments_that_are_not_strings(
+    patched_mounts: list[DummyMagicMounts],
+) -> None:
+    cr = chroot.Chroot("/mnt/cr")
+    # shlex.quote raises TypeError for anything but a string
+    with pytest.raises(chroot.ChrootError, match="failed to prepare"):
+        cr._prepare_command("sleep", 1)  # type: ignore[arg-type]
+
+
+def test_environ_has_defaults_that_the_caller_can_override(
+    patched_mounts: list[DummyMagicMounts],
+) -> None:
+    cr = chroot.Chroot("/mnt/cr", environ={"LC_ALL": "C.UTF-8", "X": "y"})
+
+    assert cr.environ["HOME"] == "/root"
+    assert cr.environ["TERM"] == "xterm"
+    assert cr.environ["LC_ALL"] == "C.UTF-8"
+    assert cr.environ["X"] == "y"
+    assert cr.environ["PATH"].startswith("/usr/local/sbin:")
+
+
+def test_profile_defaults_to_a_copy_of_mnt_default(
+    patched_mounts: list[DummyMagicMounts],
+) -> None:
+    cr = chroot.Chroot("/mnt/cr")
+
+    assert cr.profile == chroot.MNT_DEFAULT
+    assert cr.profile is not chroot.MNT_DEFAULT
+    assert patched_mounts[0].profile is cr.profile
+
+
+def test_given_profile_is_copied(
+    patched_mounts: list[DummyMagicMounts],
+) -> None:
+    cr = chroot.Chroot("/mnt/cr", mnt_profile=chroot.MNT_FULL)
+
+    assert cr.profile == chroot.MNT_FULL
+    assert cr.profile is not chroot.MNT_FULL
+
+
+def test_umount_delegates_to_magicmounts(
+    patched_mounts: list[DummyMagicMounts],
+) -> None:
+    cr = chroot.Chroot("/mnt/cr")
+
+    cr.umount()
+
+    assert patched_mounts[0].umount_called is True
+
+
+def test_repr_lists_the_public_attributes(
+    patched_mounts: list[DummyMagicMounts],
+) -> None:
+    cr = chroot.Chroot("/mnt/cr")
+    cr._hidden = "not shown"
+
+    text = repr(cr)
+
+    assert text.startswith("\nchroot.Chroot(")
+    assert "  path=/mnt/cr," in text
+    assert "_hidden" not in text
+
+
+# --- log level from the environment -----------------------------------------
+
+
+def test_log_level_follows_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The level is chosen at import time, so the module is reloaded."""
+    monkeypatch.delenv("DEBUG", raising=False)
+    monkeypatch.setenv("CHROOT_LOG_LEVEL", "info")
+    importlib.reload(chroot)
+    assert chroot.log_level == logging.INFO
+
+    monkeypatch.setenv("CHROOT_LOG_LEVEL", "nonsense")
+    importlib.reload(chroot)
+    assert chroot.log_level == logging.WARNING
+
+    monkeypatch.setenv("DEBUG", "1")
+    importlib.reload(chroot)
+    assert chroot.log_level == logging.DEBUG
+
+    monkeypatch.undo()
+    importlib.reload(chroot)
