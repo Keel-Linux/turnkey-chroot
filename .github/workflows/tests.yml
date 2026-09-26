@@ -1,0 +1,15 @@
+# Coverage gate for turnkey-chroot: 95 percent, the bar for the one file our
+# changes touch (COVERAGE.md). master measures 44 percent with the upstream
+# tests; fix/umount-in-lxc brings the file to 100 percent, so pull requests
+# from it pass while master alone does not. The check is "tests / coverage".
+name: tests
+on:
+  pull_request:
+  push:
+    branches: [master]
+jobs:
+  tests:
+    uses: keel-linux/.github/.github/workflows/test-python.yml@main
+    with:
+      threshold: 95
+      package: chroot
