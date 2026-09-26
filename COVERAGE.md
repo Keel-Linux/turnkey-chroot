@@ -4,7 +4,15 @@ Measured on 2026-09-24 against upstream master (52bcfa6), following the
 project decision 0003 (90 percent floor per repository, 95 percent for every
 file our changes touch).
 
-## Baseline: 44 percent on upstream master
+## Measured baseline on master: 100 percent (2026-09-26)
+
+fix/umount-in-lxc merged into master on 2026-09-26 (pull request #1, merge
+commit 0b1c044). master now measures 100 percent lines and branches over
+`chroot/__init__.py` with 40 tests, the same command as below. The gate in
+`.github/workflows/tests.yml` stays at 95, the bar for project-authored
+code; the sections that follow record the numbers before the merge.
+
+## Baseline before the merge: 44 percent on upstream master
 
 The package is one module, `chroot/__init__.py`, with `tests/test_chroot.py`
 (10 tests upstream). Command, from the repository root with `pytest` and
