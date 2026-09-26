@@ -216,13 +216,25 @@ class MagicMounts:
 
         def _umount(path: str) -> None:
             logger.debug("%s.umount(path=%s)", self._class, path)
+            # plain umount first; '--force' is only meaningful for network
+            # filesystems and is refused for proc inside LXC containers
+            # ("block devices are not permitted on filesystem"), which left
+            # proc mounted in the chroot. Fall back to a lazy umount if busy.
             try:
-                subprocess.run(
-                    ["/usr/bin/umount", "--force", path],
-                    check=True,
+                subprocess.run(["/usr/bin/umount", path], check=True)
+            except subprocess.CalledProcessError:
+                logger.debug(
+                    "%s.umount(path=%s) failed, retrying with --lazy",
+                    self._class,
+                    path,
                 )
-            except subprocess.CalledProcessError as e:
-                raise MountError from e
+                try:
+                    subprocess.run(
+                        ["/usr/bin/umount", "--lazy", path],
+                        check=True,
+                    )
+                except subprocess.CalledProcessError as e:
+                    raise MountError from e
 
         for mount in self.mounted:
             if self.mounted[mount]:

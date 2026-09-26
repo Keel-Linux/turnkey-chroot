@@ -67,7 +67,8 @@ chroot/
   __init__.py     Module: mount context manager, Chroot + MagicMounts classes
   py.typed        PEP 561 marker (package ships inline type hints)
 tests/
-  test_chroot.py  Unit tests (no real mounting/root required)
+  test_chroot.py  Unit tests of the Chroot API with the mount layer stood in
+  test_mount.py   Unit tests of mount() and MagicMounts with subprocess patched
 ```
 
 ## Tests
@@ -81,3 +82,24 @@ python3 -m pytest
 
 The suite mocks `subprocess` and the mount layer, so it needs neither root nor
 a real chroot.
+
+### Coverage
+
+The package must keep at least 95 percent line and branch coverage. The
+threshold and the branch setting live in `pyproject.toml`
+(`[tool.coverage.run]` and `[tool.coverage.report]`), so the last command
+exits non zero when the package falls under the bar:
+
+```bash
+python3 -m coverage run -m pytest
+python3 -m coverage report
+python3 -m coverage report --fail-under=95
+```
+
+### Lint and type checks
+
+```bash
+ruff check
+ruff format --check
+mypy chroot
+```
