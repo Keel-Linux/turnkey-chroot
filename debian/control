@@ -1,6 +1,7 @@
 Source: turnkey-chroot
 Section: python
-Maintainer: Stefan Davis <stefan@turnkeylinux.org>
+Maintainer: KeelLinux maintainers <admin@keellinux.org>
+Uploaders: Marcos Mendez <mendez.foto@gmail.com>
 Build-Depends:
  debhelper-compat (= 13),
  python3 (>= 3.13),
