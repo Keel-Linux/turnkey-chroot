@@ -1,15 +1,17 @@
-# Coverage gate for turnkey-chroot: 95 percent, the bar for the one file our
-# changes touch (COVERAGE.md). master measures 44 percent with the upstream
-# tests; fix/umount-in-lxc brings the file to 100 percent, so pull requests
-# from it pass while master alone does not. The check is "tests / coverage".
+# Light CI on GitHub-hosted runners, for pull requests on the GitHub mirror
+# (decision 0056). The full CI is .forgejo/workflows on git.pop.coop, and
+# .forgejo/workflows/tests.yml has the notes on each job.
 name: tests
+
 on:
   pull_request:
-  push:
-    branches: [master]
+
+permissions:
+  contents: read
+
 jobs:
   tests:
-    uses: keel-linux/.github/.github/workflows/test-python.yml@main
+    uses: keel-linux/.github/.github/workflows/github-test-python.yml@main
     with:
       threshold: 95
       package: chroot
